@@ -1,24 +1,24 @@
+from typing import Type
+
+from pydantic import Field
 from steamship.agents.functional import FunctionsBasedAgent
 from steamship.agents.llms.openai import ChatOpenAI
-from steamship.agents.mixins.transports.steamship_widget import \
-    SteamshipWidgetTransport
+from steamship.agents.mixins.transports.steamship_widget import SteamshipWidgetTransport
+from steamship.agents.mixins.transports.telegram import (
+    TelegramTransport,
+    TelegramTransportConfig,
+)
 from steamship.agents.service.agent_service import AgentService
-from steamship.agents.tools.image_generation.stable_diffusion import \
-    StableDiffusionTool
-from steamship.agents.tools.search.search import SearchTool
+from steamship.agents.tools.image_generation.stable_diffusion import StableDiffusionTool
+from steamship.invocable import Config
 from steamship.utils.repl import AgentREPL
-from typing import Any, List, Optional, Union
-from steamship import Block, Tag, Task
-from steamship.agents.llms import OpenAI
-from steamship.agents.schema import AgentContext, Tool
-from example_tools.coffee_search_tools import CoffeeTool
 
-SYSTEM_PROMPT = """You are Lim Kapi, an coffee shops information assistant who supports Taipei, Taichung, Hsinchu, Taoyuan, and Kaohsiung.
+SYSTEM_PROMPT = """You are Lim Kapi, courier of Coffee shops in Taiwan.
 
 Who you are:
 - You are the courier of coffee shops in Taiwan.
-- Your mission is to provide coffee shops information in Taipei, Taichung, Hsinchu, Taoyuan, and Kaohsiung.
-- Your mission is to provide coffee shops pictures information found in searching.
+- Your mission is to provide coffee shops information in Taipei, Hsinchu and Kaohsiung.
+
 
 
 How you behave:
@@ -39,18 +39,30 @@ Here is the image you requested: Block(288A2CA1-4753-4298-9716-53C1E42B726B).
 
 Only use the functions you have been provided with."""
 
+
 MODEL_NAME = "gpt-4"
 
 
-class MyAssistant(AgentService):
+class TelegramBot(AgentService):
+    """Deployable Multimodal Agent that lets you talk to Google Search & Google Images.
 
-    USED_MIXIN_CLASSES = [SteamshipWidgetTransport]
+    NOTE: To extend and deploy this agent, copy and paste the code into api.py.
+
+    """
+
+    class TelegramBotConfig(Config):
+        bot_token: str = Field(description="The secret token for your Telegram bot")
+
+    @classmethod
+    def config_cls(cls) -> Type[Config]:
+        return TelegramBot.TelegramBotConfig
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # The agent's planner is responsible for making decisions about what to do for a given input.
         self._agent = FunctionsBasedAgent(
-            tools=[SearchTool(), StableDiffusionTool(),CoffeeTool()],
+            tools=[StableDiffusionTool()],
             llm=ChatOpenAI(self.client, model_name=MODEL_NAME),
         )
         self._agent.PROMPT = SYSTEM_PROMPT
@@ -61,11 +73,19 @@ class MyAssistant(AgentService):
                 client=self.client, agent_service=self, agent=self._agent
             )
         )
-
+        # This Mixin provides support for Telegram bots
+        self.add_mixin(
+            TelegramTransport(
+                client=self.client,
+                config=TelegramTransportConfig(bot_token=self.config.bot_token),
+                agent_service=self,
+                agent=self._agent,
+            )
+        )
 
 
 if __name__ == "__main__":
     AgentREPL(
-        MyAssistant,
-        agent_package_config={},
+        TelegramBot,
+        agent_package_config={"botToken": "not-a-real-token-for-local-testing"},
     ).run()
